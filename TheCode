@@ -1,0 +1,101 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+# Step 1: Load energy consumption data from the database (or a CSV file)
+# Here, we assume the data has columns: client_id, timestamp, consumption
+# Example: energy_data = pd.read_csv('energy_data.csv')
+
+# For this example, let's generate synthetic data
+np.random.seed(42)
+clients = 100  # number of clients
+hours = pd.date_range('2023-01-01', '2023-12-31', freq='H')
+data = {
+    'client_id': np.random.choice(range(clients), size=len(hours)),
+    'timestamp': np.tile(hours, clients),
+    'consumption': np.random.normal(10, 5, size=len(hours))  # Consumption in kWh
+}
+df = pd.DataFrame(data)
+
+# Step 2: Data Preprocessing and Feature Engineering
+# Group by client and resample by day to see daily consumption patterns
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+df.set_index('timestamp', inplace=True)
+daily_consumption = df.groupby([pd.Grouper(freq='D'), 'client_id'])['consumption'].sum().reset_index()
+
+# Step 3: Analyze Energy Consumption Patterns
+# Let's visualize the daily consumption for the first client
+client_0_data = daily_consumption[daily_consumption['client_id'] == 0]
+plt.figure(figsize=(10, 6))
+plt.plot(client_0_data['timestamp'], client_0_data['consumption'], label='Client 0 Daily Consumption')
+plt.xlabel('Date')
+plt.ylabel('Energy Consumption (kWh)')
+plt.title('Client 0 Energy Consumption')
+plt.legend()
+plt.show()
+
+# Step 4: Clustering Clients Based on Energy Consumption Patterns
+# We will use K-means clustering to group clients with similar consumption patterns
+daily_client_consumption = daily_consumption.groupby('client_id')['consumption'].mean().reset_index()
+
+# Feature scaling for clustering
+scaler = StandardScaler()
+scaled_data = scaler.fit_transform(daily_client_consumption[['consumption']])
+
+# Apply KMeans clustering (e.g., 4 clusters)
+kmeans = KMeans(n_clusters=4, random_state=42)
+daily_client_consumption['cluster'] = kmeans.fit_predict(scaled_data)
+
+# Visualize the clusters
+plt.figure(figsize=(10, 6))
+sns.scatterplot(data=daily_client_consumption, x='client_id', y='consumption', hue='cluster', palette='viridis')
+plt.title('Client Consumption Clustering')
+plt.xlabel('Client ID')
+plt.ylabel('Average Daily Consumption (kWh)')
+plt.show()
+
+# Step 5: Predicting Future Energy Consumption for Each Client (Regression)
+# Prepare data for regression: Predict future consumption based on previous usage
+# Feature engineering: add lag features
+daily_consumption['day_of_week'] = daily_consumption['timestamp'].dt.dayofweek
+daily_consumption['month'] = daily_consumption['timestamp'].dt.month
+
+# Feature variables (X) and target variable (y)
+X = daily_consumption[['day_of_week', 'month']]
+y = daily_consumption['consumption']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Linear Regression model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Predict future consumption (e.g., for the next week)
+future_X = pd.DataFrame({
+    'day_of_week': [6, 0, 1, 2, 3, 4, 5],  # Next week's days (Sunday-Saturday)
+    'month': [3, 3, 3, 3, 3, 3, 3]  # March (assuming we're forecasting for March)
+})
+
+predicted_consumption = model.predict(future_X)
+
+# Plot future predictions
+plt.figure(figsize=(10, 6))
+plt.plot(future_X['day_of_week'], predicted_consumption, marker='o', label='Predicted Consumption')
+plt.xlabel('Day of Week')
+plt.ylabel('Predicted Consumption (kWh)')
+plt.title('Predicted Energy Consumption for Next Week')
+plt.xticks(ticks=np.arange(7), labels=['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
+plt.legend()
+plt.show()
+
+# Step 6: Evaluate Model Performance (Optional)
+from sklearn.metrics import mean_squared_error
+y_pred = model.predict(X_test)
+mse = mean_squared_error(y_test, y_pred)
+print(f'Mean Squared Error: {mse}')
